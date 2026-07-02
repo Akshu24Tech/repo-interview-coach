@@ -2,6 +2,8 @@
 
 An AI-powered interview preparation coach built with **Google Agent Development Kit (ADK)** that analyzes any public GitHub repository and gives you a grounded technical profile to ace your interviews.
 
+**Live demo:** https://repo-interview-coach-788528493953.us-central1.run.app/dev-ui/ (Cloud Run)
+
 ## What it does
 
 Given a public GitHub repository (`owner/repo` or a GitHub URL), the agent:
@@ -23,8 +25,8 @@ Given a public GitHub repository (`owner/repo` or a GitHub URL), the agent:
 └── .env              # GitHub token (not committed)
 ```
 
-- **Phase 1 (current):** Tool-calling `LlmAgent` that loads and profiles the repo
-- **Phase 2 (planned):** Full Workflow graph — `load → interview LoopAgent (HITL) → Dossier builder`
+Full ADK 2.0 Workflow graph: `load_context → structure_profile → interview (HITL) → build_dossier`,
+with a `before_tool` guardrail and a green eval suite.
 
 ## Tech Stack
 
@@ -68,10 +70,12 @@ The agent fetches real content and gives you a technical profile with interview 
 
 ## Roadmap
 
-- [x] Phase 1: Context Loader (tool-calling agent)
-- [ ] Phase 2: Interactive interview loop (HITL with `RequestInput`)
-- [ ] Phase 3: Dossier builder (structured output)
-- [ ] Phase 4: Multi-repo comparison mode
+- [x] Phase 1: Context Loader (tool-calling agent) + schemas + GitHub tools
+- [x] Phase 2: Workflow graph + interactive interview loop (HITL `request_input`)
+- [x] Phase 3: `before_tool` guardrail + answer scoring
+- [x] Phase 4: Eval suite (custom scorecard 7/7 + ADK AgentEvaluator)
+- [x] Phase 5: Deploy to Cloud Run (`--with_ui`, `GOOGLE_API_KEY` in Secret Manager, all-Gemini, max-instances=1) + verified live link
+- [ ] Phase 6: README/talk-track + resume bullet; swap Finance Advisor out
 
 ## License
 

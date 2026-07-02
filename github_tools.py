@@ -65,7 +65,7 @@ def fetch_repo_overview(owner: str, repo: str) -> dict:
     }
 
 
-def fetch_readme(owner: str, repo: str, max_chars: int = 6000) -> str:
+def fetch_readme(owner: str, repo: str, max_chars: int = 1500) -> str:
     """Fetch the raw README text of a public GitHub repo (truncated). Use this
     to understand what the project does and how it is structured.
 
@@ -81,7 +81,7 @@ def fetch_readme(owner: str, repo: str, max_chars: int = 6000) -> str:
     return text[:max_chars] + ("\n...[truncated]" if len(text) > max_chars else "")
 
 
-def fetch_recent_commits(owner: str, repo: str, limit: int = 20) -> list[str]:
+def fetch_recent_commits(owner: str, repo: str, limit: int = 8) -> list[str]:
     """Fetch recent commit messages (with dates) for a public GitHub repo. Use
     this to see what was actually built and changed.
 
@@ -103,7 +103,7 @@ def fetch_recent_commits(owner: str, repo: str, limit: int = 20) -> list[str]:
     return out
 
 
-def fetch_file_tree(owner: str, repo: str, max_files: int = 60) -> list[str]:
+def fetch_file_tree(owner: str, repo: str, max_files: int = 25) -> list[str]:
     """Fetch the file paths in a public GitHub repo (recursive, truncated). Use
     this to understand the project's structure and spot key modules.
 
