@@ -1,0 +1,27 @@
+=== Repo Interview Coach — eval scorecard ===
+
+-- GATE (deterministic) --
+[PASS] normal  guardrail.parses_url
+[PASS] normal  guardrail.parses_owner_slash_repo
+[PASS] edge    guardrail.strips_git_suffix
+[PASS] edge    guardrail.clamps_max_files
+[PASS] edge    guardrail.clamps_limit
+[PASS] edge    guardrail.clamps_max_chars_floor
+[PASS] edge    guardrail.non_numeric_arg_defaults
+[PASS] failure guardrail.blocks_malicious
+[PASS] failure guardrail.blocks_empty
+[PASS] failure schema.rejects_incomplete_profile
+[PASS] failure schema.rejects_out_of_range_score
+[PASS] normal  schema.valid_profile_roundtrips
+
+-- LIVE (GitHub API + model) --
+[PASS] normal  tools.overview_real_data
+[PASS] normal  tools.commits_are_dated
+[PASS] failure tools.missing_repo_is_error
+[PASS] failure tools.file_tree_propagates_error
+[PASS] normal  analysis.fires_expected_tools
+[PASS] normal  analysis.produces_valid_profile
+[PASS] normal  analysis.identity_grounded
+[PASS] normal  analysis.languages_not_hallucinated
+
+--- 20 passed · 0 failed · 0 skipped (of 20) ---

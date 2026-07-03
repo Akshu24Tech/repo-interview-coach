@@ -1,0 +1,32 @@
+{
+  "eval_set_id": "loader_evalset",
+  "name": "Repo analysis loader evalset",
+  "description": "ADK-native evalset for the analysis half (load_context -> structure_profile): given a public repo, the agent should fetch its real data with the right tools and produce a grounded profile. Run with `adk eval`.",
+  "eval_cases": [
+    {
+      "eval_id": "repo_guardian_happy_path",
+      "conversation": [
+        {
+          "invocation_id": "inv-1",
+          "user_content": {
+            "role": "user",
+            "parts": [{ "text": "Akshu24Tech/repo-guardian" }]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [{ "text": "Repo Guardian is an agentic code reviewer built with Google ADK. It is primarily Python, with Terraform (HCL) deployment and Gherkin tests. It reviews diffs against a spec, runs a deterministic security pre-screen before the LLM, and returns one of four verdicts." }]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              { "name": "fetch_repo_overview", "args": { "owner": "Akshu24Tech", "repo": "repo-guardian" } },
+              { "name": "fetch_readme", "args": { "owner": "Akshu24Tech", "repo": "repo-guardian" } },
+              { "name": "fetch_recent_commits", "args": { "owner": "Akshu24Tech", "repo": "repo-guardian" } },
+              { "name": "fetch_file_tree", "args": { "owner": "Akshu24Tech", "repo": "repo-guardian" } },
+              { "name": "fetch_languages", "args": { "owner": "Akshu24Tech", "repo": "repo-guardian" } }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

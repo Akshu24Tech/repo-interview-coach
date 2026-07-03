@@ -1,0 +1,43 @@
+<!doctype html><meta charset="utf-8">
+<title>Repo Interview Coach — eval scorecard</title>
+<style>
+  body{background:#0d1117;color:#c9d1d9;font:14px/1.6 'Cascadia Code',Consolas,monospace;margin:0;padding:32px}
+  .card{max-width:780px;margin:auto;background:#161b22;border:1px solid #30363d;border-radius:12px;overflow:hidden}
+  h1{font-size:16px;margin:0;padding:16px 20px;border-bottom:1px solid #30363d;color:#e6edf3}
+  h1 small{color:#8b949e;font-weight:400}
+  table{width:100%;border-collapse:collapse}
+  td{padding:6px 12px;border-bottom:1px solid #21262d}
+  tr.sec td{background:#0d1117;color:#8b949e;font-weight:700;font-size:12px;letter-spacing:.4px;text-transform:uppercase;border-bottom:1px solid #30363d}
+  .b{font-weight:700;width:56px} .pass{color:#3fb950} .fail{color:#f85149} .skip{color:#8b949e}
+  .k{width:80px;text-transform:uppercase;font-size:11px;letter-spacing:.5px}
+  .normal{color:#58a6ff} .edge{color:#d29922} .failure{color:#bc8cff}
+  .n{color:#c9d1d9}
+  .foot{padding:14px 20px;font-size:15px;font-weight:700}
+  .ok{color:#3fb950} .bad{color:#f85149}
+</style>
+<div class="card">
+  <h1>Repo Interview Coach — eval scorecard&nbsp; <small>uv run python -m evals.eval_harness</small></h1>
+  <table><tr class="sec"><td colspan="3">GATE — deterministic (drives exit code)</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">guardrail.parses_url</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">guardrail.parses_owner_slash_repo</td></tr>
+<tr><td class="b pass">PASS</td><td class="k edge">edge</td><td class="n">guardrail.strips_git_suffix</td></tr>
+<tr><td class="b pass">PASS</td><td class="k edge">edge</td><td class="n">guardrail.clamps_max_files</td></tr>
+<tr><td class="b pass">PASS</td><td class="k edge">edge</td><td class="n">guardrail.clamps_limit</td></tr>
+<tr><td class="b pass">PASS</td><td class="k edge">edge</td><td class="n">guardrail.clamps_max_chars_floor</td></tr>
+<tr><td class="b pass">PASS</td><td class="k edge">edge</td><td class="n">guardrail.non_numeric_arg_defaults</td></tr>
+<tr><td class="b pass">PASS</td><td class="k failure">failure</td><td class="n">guardrail.blocks_malicious</td></tr>
+<tr><td class="b pass">PASS</td><td class="k failure">failure</td><td class="n">guardrail.blocks_empty</td></tr>
+<tr><td class="b pass">PASS</td><td class="k failure">failure</td><td class="n">schema.rejects_incomplete_profile</td></tr>
+<tr><td class="b pass">PASS</td><td class="k failure">failure</td><td class="n">schema.rejects_out_of_range_score</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">schema.valid_profile_roundtrips</td></tr>
+<tr class="sec"><td colspan="3">LIVE — real GitHub API + model</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">tools.overview_real_data</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">tools.commits_are_dated</td></tr>
+<tr><td class="b pass">PASS</td><td class="k failure">failure</td><td class="n">tools.missing_repo_is_error</td></tr>
+<tr><td class="b pass">PASS</td><td class="k failure">failure</td><td class="n">tools.file_tree_propagates_error</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">analysis.fires_expected_tools</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">analysis.produces_valid_profile</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">analysis.identity_grounded</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">analysis.languages_not_hallucinated</td></tr></table>
+  <div class="foot ok">20 passed · 0 failed · 0 skipped (of 20)</div>
+</div>
