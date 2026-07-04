@@ -47,7 +47,7 @@ from .schemas import Dossier, ProjectProfile, QuestionBank
 # Set RIC_MODEL to a LiteLLM provider id (openrouter/…, anthropic/…, ollama/…)
 # to route elsewhere.
 MODEL_NAME = os.getenv("RIC_MODEL", "gemini-2.5-flash")
-_LITELLM_PREFIXES = ("openai/", "openrouter/", "anthropic/", "ollama/", "ollama_chat/")
+_LITELLM_PREFIXES = ("openai/", "openrouter/", "anthropic/", "groq/", "ollama/", "ollama_chat/")
 
 
 def _model(name: str = MODEL_NAME):
