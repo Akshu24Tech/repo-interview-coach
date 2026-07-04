@@ -47,6 +47,7 @@ load_dotenv(os.path.join(_PKG_DIR, ".env"))
 
 from google.adk.runners import InMemoryRunner
 
+from repo_interview_coach.agent import _BATCH_SIZE, _MAX_ROUNDS, _interview_plan, _wants_more
 from repo_interview_coach.analysis_app.agent import root_agent as analysis_agent
 from repo_interview_coach.github_tools import (
     fetch_file_tree,
@@ -194,6 +195,57 @@ async def main() -> int:
     }
     check("gate", "schema.valid_profile_roundtrips", "normal",
           not raises(lambda: ProjectProfile.model_validate(good).model_dump()))
+
+    # ===================================================================== #
+    #  GATE — interview state machine. Pure logic driving the batched HITL.  #
+    #  Q = a question answer, "yes"/"no" = a round-gate answer.              #
+    # ===================================================================== #
+
+    Q = "answer"
+    def act(responses):  # convenience: the action string for a response sequence
+        return _interview_plan(responses)["action"]
+
+    # [normal] empty history -> ask the very first question (k=0).
+    plan0 = _interview_plan([])
+    check("gate", "interview.starts_with_question", "normal",
+          plan0["action"] == "question" and plan0["k"] == 0, str(plan0))
+
+    # [normal] after a full batch of answers -> show the round review + gate.
+    plan_g = _interview_plan([Q, Q, Q])
+    check("gate", "interview.gate_after_batch", "normal",
+          plan_g["action"] == "gate" and plan_g["round"] == 1, str(plan_g))
+
+    # [normal] "yes" at the gate -> continue into the next round's first question.
+    plan_y = _interview_plan([Q, Q, Q, "yes"])
+    check("gate", "interview.yes_continues", "normal",
+          plan_y["action"] == "question" and plan_y["k"] == _BATCH_SIZE, str(plan_y))
+
+    # [failure] "no" at the gate -> stop (this is the bug the user hit: no more looping).
+    check("gate", "interview.no_stops", "failure",
+          _interview_plan([Q, Q, Q, "no"]) == {"action": "stop", "reason": "user"})
+
+    # [edge] "no more" -> negation wins over the word "more" -> stop.
+    check("gate", "interview.no_more_stops", "edge",
+          act([Q, Q, Q, "no more"]) == "stop")
+
+    # [edge] an ambiguous gate answer defaults to STOP, never an accidental loop.
+    check("gate", "interview.ambiguous_stops", "edge",
+          act([Q, Q, Q, "hmm maybe"]) == "stop")
+
+    # [normal] two clean rounds then "no" -> stop after 6 questions.
+    two_rounds = [Q, Q, Q, "yes", Q, Q, Q, "no"]
+    check("gate", "interview.two_rounds_then_stop", "normal",
+          act(two_rounds) == "stop", str(_interview_plan(two_rounds)))
+
+    # [failure] hard cap: even with endless "yes", it stops at _MAX_ROUNDS.
+    capped = ([Q, Q, Q, "yes"] * _MAX_ROUNDS)
+    check("gate", "interview.hard_cap_stops", "failure",
+          _interview_plan(capped) == {"action": "stop", "reason": "cap"}, str(_interview_plan(capped)))
+
+    # [edge] gate-word interpreter: negation beats affirmation, unknown -> stop.
+    check("gate", "interview.wants_more_semantics", "edge",
+          _wants_more("yes") and not _wants_more("no")
+          and not _wants_more("no more") and not _wants_more("") and _wants_more("sure keep going"))
 
     # ===================================================================== #
     #  LIVE — tools. Real GitHub API. Real data + graceful failure paths.    #

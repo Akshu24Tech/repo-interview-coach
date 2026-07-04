@@ -13,6 +13,15 @@
 [PASS] failure schema.rejects_incomplete_profile
 [PASS] failure schema.rejects_out_of_range_score
 [PASS] normal  schema.valid_profile_roundtrips
+[PASS] normal  interview.starts_with_question
+[PASS] normal  interview.gate_after_batch
+[PASS] normal  interview.yes_continues
+[PASS] failure interview.no_stops
+[PASS] edge    interview.no_more_stops
+[PASS] edge    interview.ambiguous_stops
+[PASS] normal  interview.two_rounds_then_stop
+[PASS] failure interview.hard_cap_stops
+[PASS] edge    interview.wants_more_semantics
 
 -- LIVE (GitHub API + model) --
 [PASS] normal  tools.overview_real_data
@@ -24,4 +33,4 @@
 [PASS] normal  analysis.identity_grounded
 [PASS] normal  analysis.languages_not_hallucinated
 
---- 20 passed · 0 failed · 0 skipped (of 20) ---
+--- 29 passed · 0 failed · 0 skipped (of 29) ---

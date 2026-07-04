@@ -26,6 +26,21 @@ class ProjectProfile(BaseModel):
     likely_weak_spots: list[str] = Field(default_factory=list, description="Areas a sharp interviewer would probe: missing tests, no error handling, unclear scaling, thin docs, etc.")
 
 
+class QuestionBank(BaseModel):
+    """A project-specific set of tough interview questions, generated from the
+    profile BEFORE the interview and reused by the dossier. Ordered warm-up →
+    hardest. This is what makes the follow-up rounds sharp and grounded instead
+    of generic."""
+
+    owner: str = Field(description="GitHub username/org that owns the repo.")
+    repo: str = Field(description="Repository name.")
+    questions: list[str] = Field(
+        description="8-10 sharp, project-specific interview questions, ordered from a "
+        "warm-up to the hardest. Each must only make sense for THIS project — grounded "
+        "in its real components, recent work, and likely weak spots."
+    )
+
+
 class AnswerScore(BaseModel):
     """The Evaluator's verdict on one interview answer."""
 

@@ -24,6 +24,7 @@ instance ending up with two parents.
 from __future__ import annotations
 
 import os
+import re
 
 from google.adk.agents import LlmAgent
 from google.adk.tools._request_input_tool import request_input
@@ -38,7 +39,7 @@ from .github_tools import (
     fetch_repo_overview,
 )
 from .guardrails import sanitize_github_args
-from .schemas import Dossier, ProjectProfile
+from .schemas import Dossier, ProjectProfile, QuestionBank
 
 # Model is env-configurable so every node can be routed without code edits.
 # Default Gemini 2.5 Flash — its free-tier TPM comfortably handles both the
@@ -85,18 +86,28 @@ You are a sharp, demanding technical interviewer. The candidate built this proje
 
 {profile}
 
-Conduct a focused technical interview, ONE question per request_input call,
-never batched. A [INTERVIEWER CONTROL] message will tell you exactly how many
-questions there are in total, which numbered question to ask next, and the topic
-it must cover — follow it exactly and never repeat an earlier question. Tailor
-each question to THIS candidate's project and make it harder than the last; probe
-a real weak spot from the profile. Be direct, no flattery. If the candidate
-bluffs or hand-waves, call it out.
+You have a prepared bank of project-specific questions to draw from:
 
-When the control message says all questions have been answered, STOP calling
-request_input and output a plain-text transcript with one block PER QUESTION YOU
-ACTUALLY ASKED (do not invent extra questions or answers), each in EXACTLY this
-format so the next step can parse it:
+{question_bank}
+
+Run the interview in ROUNDS of 3 questions. A [INTERVIEWER CONTROL] message tells
+you each turn exactly what to do: ask one specific question (it names WHICH bank
+question number to use), OR give a round review and ask whether to continue, OR
+stop and write the transcript. Follow it EXACTLY. One request_input call per turn,
+never batched. Base each question on the named bank item, but sharpen it for THIS
+candidate and make it harder if the last answer was strong; probe a real weak
+spot; never repeat an earlier question. If the control message points past the end
+of the bank, ask a fresh, harder question on an area not yet probed. Be direct, no
+flattery; if the candidate bluffs or hand-waves, call it out.
+
+After each round of 3, the control message will tell you to give a short REVIEW (a
+score out of 5 and a one-line strength/gap per question) and THEN ask, via
+request_input, whether they want another round.
+
+When the control message says the interview is over, STOP calling request_input and
+output a plain-text transcript with one block PER ACTUAL INTERVIEW QUESTION asked
+(exclude the yes/no "want another round" prompts; do not invent extra questions),
+each in EXACTLY this format so the next step can parse it:
 
 Q: <the question>
 A: <the candidate's answer, summarised>
@@ -107,96 +118,186 @@ Model answer: <one tight line grounded in the project>
 
 This transcript is for the next step."""
 
+_QUESTIONBANK_INSTRUCTION = """\
+Here is a structured profile of a candidate's project:
+
+{profile}
+
+Generate a QuestionBank: 8-10 tough, SPECIFIC technical interview questions for
+THIS project, ordered from a warm-up to the hardest. Ground every question in the
+profile — its real components, recent work, and likely weak spots. No generic
+questions ("what is an API?"); each must only make sense for this exact project.
+These drive a live interview and are reused in the final dossier."""
+
 _DOSSIER_INSTRUCTION = """\
 Project profile:
 
 {profile}
+
+Prepared question bank (reuse and refine these):
+
+{question_bank}
 
 Interview transcript:
 
 {transcript}
 
 Produce the final Dossier: 3-4 STAR-shaped resume bullets (honest, quantified
-only where the project supports it), a question bank of likely interview
-questions, an upgrade list of concrete improvements that would both strengthen
-the project and give better interview stories, and a short honest read on how
+only where the project supports it); a question_bank that STARTS from the prepared
+bank above (refine the wording and add any sharp questions the interview
+surfaced); an upgrade list of concrete improvements that would both strengthen the
+project and give better interview stories; and a short honest read on how
 interview-ready it is."""
 
 
-# Fixed interview plan. Progression is driven by code (counting answered
-# questions), not by trusting the model to remember what it already asked — a
-# single self-looping LlmAgent re-enters fresh on each request_input resume and
-# weaker models just re-ask the opener. See DEBUG-LOG 2026-06-30.
+# The interview runs in ROUNDS of _BATCH_SIZE questions. After each round the
+# coach shows a review and asks (human-in-the-loop) whether to continue; "no"
+# stops and produces the dossier, "yes" starts another round — up to a hard cap
+# of _MAX_ROUNDS so it can never loop forever. Progression is driven entirely by
+# code counting answers in the session history, NOT by trusting the model to
+# remember what it asked — a self-looping LlmAgent re-enters fresh on each
+# request_input resume and weak models just re-ask the opener. See DEBUG-LOG
+# 2026-06-30 / 07-02. The theme pool deepens across rounds.
+_BATCH_SIZE = 3
+_MAX_ROUNDS = 5  # hard safety cap: at most _MAX_ROUNDS * _BATCH_SIZE questions.
 _INTERVIEW_THEMES = [
     "a 60-second pitch of what the project does and why it matters",
     "a key architecture or design decision, and the reasoning behind it",
     "the hardest bug, tradeoff, or failure they hit and how they handled it",
+    "how the system handles failure: errors, retries, rate limits, bad input",
+    "testing and how they know it actually works (evals, edge cases)",
+    "security and trust boundaries: untrusted input, secrets, tool access",
+    "scaling and cost: what breaks at 10x load or 10x data, and the API bill",
+    "a concrete tradeoff they would revisit, and what they would do differently",
 ]
 _REQUEST_INPUT_NAME = "adk_request_input"
 
+# Words that decide the "want another round?" gate. Negation wins over "more"
+# so answers like "no more" correctly STOP; anything unclear also stops, so the
+# interview can never loop on garbage input.
+_STOP_WORDS = {"no", "nope", "nah", "stop", "done", "enough", "quit", "finish", "end", "n"}
+_GO_WORDS = {"yes", "y", "yeah", "yep", "yup", "sure", "ok", "okay", "continue", "more", "go", "keep", "another", "yea"}
 
-def _count_answered(callback_context, llm_request) -> int:
-    """Number of interview answers so far = count of `adk_request_input`
-    function_responses. Counted from the full session event history
-    (callback_context.session.events), which is the authoritative record — the
-    per-turn `llm_request.contents` is rebuilt on each Workflow resume and does
-    NOT reliably carry prior answers, so counting it stuck at 0 and the interview
-    re-asked question #1 forever. Falls back to contents if session is absent."""
-    def _tally(iterable) -> int:
-        n = 0
+
+def _wants_more(text: str) -> bool:
+    """Interpret a gate answer. Negation is checked first (so 'no more' stops),
+    then affirmation; anything ambiguous defaults to STOP so we never loop."""
+    words = set(re.findall(r"[a-z]+", (text or "").lower()))
+    if words & _STOP_WORDS:
+        return False
+    if words & _GO_WORDS:
+        return True
+    return False
+
+
+def _interview_plan(responses: list[str]) -> dict:
+    """Pure state machine for the batched interview. Given the ordered list of
+    user answers to `request_input` (both interview answers AND the yes/no gate
+    answers), decide the next move. Deterministic and side-effect free so it is
+    unit-tested directly (see the eval harness). Returns one of:
+      {"action": "question", "k": <0-based questions answered>}
+      {"action": "gate", "round": <1-based round just finished>}
+      {"action": "stop", "reason": "user" | "cap"}
+
+    Layout: each round is _BATCH_SIZE questions followed by ONE gate answer, so
+    within a cycle of length L = _BATCH_SIZE + 1 the response at cycle-position
+    _BATCH_SIZE is a gate answer and the rest are interview answers."""
+    n = len(responses)
+    L = _BATCH_SIZE + 1
+    gates_answered = sum(1 for i in range(n) if i % L == _BATCH_SIZE)
+    questions_answered = n - gates_answered
+    last_is_gate = n > 0 and (n - 1) % L == _BATCH_SIZE
+
+    if last_is_gate:
+        if gates_answered >= _MAX_ROUNDS:
+            return {"action": "stop", "reason": "cap"}
+        if not _wants_more(responses[-1]):
+            return {"action": "stop", "reason": "user"}
+        return {"action": "question", "k": questions_answered}
+
+    if n % L == _BATCH_SIZE:
+        return {"action": "gate", "round": questions_answered // _BATCH_SIZE}
+
+    return {"action": "question", "k": questions_answered}
+
+
+def _request_input_responses(callback_context, llm_request) -> list[str]:
+    """Ordered list of the candidate's answers to `adk_request_input`, read from
+    the authoritative session event history (falling back to per-turn contents if
+    the session is absent — the Workflow resume rebuilds contents empty, which is
+    why the old count stuck at 0; see DEBUG-LOG 2026-07-02)."""
+    def _collect(iterable) -> list[str]:
+        out: list[str] = []
         for item in iterable or []:
             content = getattr(item, "content", item)
             for part in getattr(content, "parts", None) or []:
                 fr = getattr(part, "function_response", None)
-                if fr is not None and fr.name == _REQUEST_INPUT_NAME:
-                    n += 1
-        return n
+                if fr is not None and getattr(fr, "name", None) == _REQUEST_INPUT_NAME:
+                    out.append(str(getattr(fr, "response", "")))
+        return out
 
     session = getattr(callback_context, "session", None)
     events = getattr(session, "events", None)
     if events:
-        return _tally(events)
-    return _tally(llm_request.contents)
+        return _collect(events)
+    return _collect(llm_request.contents)
+
+
+def _strip_request_input(llm_request) -> None:
+    """Physically remove the request_input tool so a weak model CANNOT keep
+    asking — with no tool to call it must emit the final transcript. Instruction
+    alone doesn't hold on small models (DEBUG-LOG: llama-3.3/scout looped)."""
+    cfg = getattr(llm_request, "config", None)
+    if cfg is not None and cfg.tools:
+        for tool in cfg.tools:
+            fds = getattr(tool, "function_declarations", None)
+            if fds:
+                tool.function_declarations = [
+                    fd for fd in fds if fd.name != _REQUEST_INPUT_NAME
+                ]
+        cfg.tools = [t for t in cfg.tools if getattr(t, "function_declarations", None)]
+    if getattr(llm_request, "tools_dict", None):
+        llm_request.tools_dict.pop(_REQUEST_INPUT_NAME, None)
 
 
 def _steer_interview(callback_context, llm_request):
-    """before_model_callback: count answered interview questions from history and
-    inject a hard [INTERVIEWER CONTROL] directive naming the exact next question
-    to ask (or to stop). Makes progression deterministic on any model."""
-    answered = _count_answered(callback_context, llm_request)
+    """before_model_callback: derive the next move from session history and inject
+    a hard [INTERVIEWER CONTROL] directive (ask question N / review + gate / stop).
+    Makes the batched progression deterministic on any model."""
+    plan = _interview_plan(_request_input_responses(callback_context, llm_request))
 
-    if answered >= len(_INTERVIEW_THEMES):
+    if plan["action"] == "stop":
+        why = ("You have reached the maximum number of rounds."
+               if plan.get("reason") == "cap"
+               else "The candidate chose to stop.")
         directive = (
-            f"All {len(_INTERVIEW_THEMES)} questions have been asked and answered. "
-            "Do NOT call request_input again. Output the final plain-text transcript "
-            "now, one block per question, in the exact required format."
+            f"The interview is over. {why} Do NOT call request_input again. Output the "
+            "final plain-text transcript now — one block per ACTUAL interview question "
+            "asked (exclude the yes/no 'want another round' prompts), in the exact format."
         )
-        # Deterministic stop: physically remove the request_input tool so a weak
-        # model CANNOT keep asking. With no tool to call, it must emit the final
-        # transcript text. Instruction alone doesn't hold on small models (see
-        # DEBUG-LOG: llama-3.3/scout looped even when told to stop).
-        cfg = getattr(llm_request, "config", None)
-        if cfg is not None and cfg.tools:
-            for tool in cfg.tools:
-                fds = getattr(tool, "function_declarations", None)
-                if fds:
-                    tool.function_declarations = [
-                        fd for fd in fds if fd.name != _REQUEST_INPUT_NAME
-                    ]
-            cfg.tools = [
-                t for t in cfg.tools if getattr(t, "function_declarations", None)
-            ]
-        if getattr(llm_request, "tools_dict", None):
-            llm_request.tools_dict.pop(_REQUEST_INPUT_NAME, None)
-    else:
-        done = ", ".join(
-            f"#{i + 1} ({_INTERVIEW_THEMES[i].split(',')[0]})" for i in range(answered)
-        ) or "none yet"
+        _strip_request_input(llm_request)
+    elif plan["action"] == "gate":
+        rnd = plan["round"]
         directive = (
-            f"Questions already asked and answered: {done}. "
-            f"Now ask question #{answered + 1} of {len(_INTERVIEW_THEMES)}, which MUST cover: "
-            f"{_INTERVIEW_THEMES[answered]}. Ask exactly ONE new question via request_input, "
-            "specific to this candidate's project and harder than the last. Never repeat a prior question."
+            f"Round {rnd} complete — the candidate has answered {_BATCH_SIZE} questions this round. "
+            f"FIRST output a brief REVIEW of just this round: for each of the last {_BATCH_SIZE} "
+            "questions, one line 'Q<n>: <score>/5 — <strength> / <gap>'. Keep it tight. "
+            "THEN call request_input asking EXACTLY: 'Want another round of "
+            f"{_BATCH_SIZE} questions? Reply yes or no.' Do NOT ask a new interview question this "
+            "turn — the only request_input is the yes/no."
+        )
+    else:  # question
+        k = plan["k"]
+        theme = _INTERVIEW_THEMES[k % len(_INTERVIEW_THEMES)]
+        round_no = k // _BATCH_SIZE + 1
+        in_round = k % _BATCH_SIZE + 1
+        directive = (
+            f"Interview in progress: {k} question(s) answered so far. Now ask question "
+            f"{in_round} of {_BATCH_SIZE} in round {round_no}. Use bank question #{k + 1} as the basis "
+            f"(if the bank has fewer than {k + 1} questions, ask a fresh harder question on an un-probed "
+            f"area such as: {theme}). Sharpen it for this candidate and make it harder than the last; "
+            "probe a real weak spot. Ask exactly ONE new question via request_input. Never repeat an "
+            "earlier question. Ask ONLY the question."
         )
 
     llm_request.contents = list(llm_request.contents or []) + [
@@ -260,6 +361,20 @@ def build_structure_agent() -> LlmAgent:
     )
 
 
+def build_questionbank_agent() -> LlmAgent:
+    """Generates a project-specific bank of interview questions from the profile,
+    BEFORE the interview — so follow-up rounds draw sharp, grounded questions
+    instead of generic themes. Reused by the dossier. No tools (output_schema)."""
+    return LlmAgent(
+        name="question_bank",
+        model=_model(),
+        description="Generates a project-specific bank of interview questions from the profile.",
+        instruction=_QUESTIONBANK_INSTRUCTION,
+        output_schema=QuestionBank,
+        output_key="question_bank",
+    )
+
+
 def build_interview_agent() -> LlmAgent:
     """Live, adaptive HITL interview via the request_input long-running tool."""
     return LlmAgent(
@@ -287,15 +402,17 @@ def build_dossier_agent() -> LlmAgent:
 
 
 def build_workflow() -> Workflow:
-    """Wire the four agents into the interview-coach graph."""
+    """Wire the agents into the interview-coach graph:
+    START -> load -> structure -> question_bank -> interview -> dossier."""
     load_node = node(build_load_agent(), name="load_context")
     structure_node = node(build_structure_agent(), name="structure_profile")
+    bank_node = node(build_questionbank_agent(), name="question_bank")
     interview_node = node(build_interview_agent(), name="interview")
     dossier_node = node(build_dossier_agent(), name="build_dossier")
     return Workflow(
         name="repo_interview_coach",
         description="Interviews a candidate on their own public GitHub project and produces an interview-prep dossier.",
-        edges=[(START, load_node, structure_node, interview_node, dossier_node)],
+        edges=[(START, load_node, structure_node, bank_node, interview_node, dossier_node)],
     )
 
 

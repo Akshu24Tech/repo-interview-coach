@@ -30,6 +30,15 @@
 <tr><td class="b pass">PASS</td><td class="k failure">failure</td><td class="n">schema.rejects_incomplete_profile</td></tr>
 <tr><td class="b pass">PASS</td><td class="k failure">failure</td><td class="n">schema.rejects_out_of_range_score</td></tr>
 <tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">schema.valid_profile_roundtrips</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">interview.starts_with_question</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">interview.gate_after_batch</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">interview.yes_continues</td></tr>
+<tr><td class="b pass">PASS</td><td class="k failure">failure</td><td class="n">interview.no_stops</td></tr>
+<tr><td class="b pass">PASS</td><td class="k edge">edge</td><td class="n">interview.no_more_stops</td></tr>
+<tr><td class="b pass">PASS</td><td class="k edge">edge</td><td class="n">interview.ambiguous_stops</td></tr>
+<tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">interview.two_rounds_then_stop</td></tr>
+<tr><td class="b pass">PASS</td><td class="k failure">failure</td><td class="n">interview.hard_cap_stops</td></tr>
+<tr><td class="b pass">PASS</td><td class="k edge">edge</td><td class="n">interview.wants_more_semantics</td></tr>
 <tr class="sec"><td colspan="3">LIVE — real GitHub API + model</td></tr>
 <tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">tools.overview_real_data</td></tr>
 <tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">tools.commits_are_dated</td></tr>
@@ -39,5 +48,5 @@
 <tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">analysis.produces_valid_profile</td></tr>
 <tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">analysis.identity_grounded</td></tr>
 <tr><td class="b pass">PASS</td><td class="k normal">normal</td><td class="n">analysis.languages_not_hallucinated</td></tr></table>
-  <div class="foot ok">20 passed · 0 failed · 0 skipped (of 20)</div>
+  <div class="foot ok">29 passed · 0 failed · 0 skipped (of 29)</div>
 </div>
